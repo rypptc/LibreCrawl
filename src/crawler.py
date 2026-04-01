@@ -792,14 +792,7 @@ class WebCrawler:
             # Update all linked_from fields before completing
             self._update_all_linked_from()
 
-            # Run duplication detection on all crawled content
-            if self.issue_detector and self.config.get('enable_duplication_check', True):
-                print("Running duplication detection...")
-                duplication_threshold = self.config.get('duplication_threshold', 0.85)
-                self.issue_detector.detect_duplication_issues(self.crawl_results, duplication_threshold)
-                print(f"Duplication detection complete. Total issues: {len(self.issue_detector.get_issues())}")
-
-        # Save final data and set appropriate status
+        # Save final data and mark as complete
         if self.db_save_enabled and self.crawl_id:
             self._save_batch_to_db(force=True)
             from src.crawl_db import set_crawl_status
@@ -814,6 +807,16 @@ class WebCrawler:
             print(f"Crawl stopped (demo limit). User memory: {self.user_memory.total_mb:.0f}MB. Crawled: {self.stats['crawled']}")
         else:
             print(f"Crawl completed. Discovered: {self.stats['discovered']}, Crawled: {self.stats['crawled']}")
+
+        # Run duplication detection in background (does not block completed status)
+        if self.issue_detector and self.config.get('enable_duplication_check', True):
+            duplication_threshold = self.config.get('duplication_threshold', 0.85)
+            crawl_results_snapshot = list(self.crawl_results)
+            def _run_dedup():
+                print("Running duplication detection...")
+                self.issue_detector.detect_duplication_issues(crawl_results_snapshot, duplication_threshold)
+                print(f"Duplication detection complete. Total issues: {len(self.issue_detector.get_issues())}")
+            threading.Thread(target=_run_dedup, daemon=True).start()
 
     def _crawl_url(self, url, depth):
         """Crawl a single URL"""
@@ -1167,14 +1170,7 @@ class WebCrawler:
                 # Update all linked_from fields before completing
                 self._update_all_linked_from()
 
-                # Run duplication detection on all crawled content
-                if self.issue_detector and self.config.get('enable_duplication_check', True):
-                    print("Running duplication detection...")
-                    duplication_threshold = self.config.get('duplication_threshold', 0.85)
-                    self.issue_detector.detect_duplication_issues(self.crawl_results, duplication_threshold)
-                    print(f"Duplication detection complete. Total issues: {len(self.issue_detector.get_issues())}")
-
-            # Save final data and set appropriate status
+            # Save final data and mark as complete
             if self.db_save_enabled and self.crawl_id:
                 self._save_batch_to_db(force=True)
                 from src.crawl_db import set_crawl_status
@@ -1187,6 +1183,16 @@ class WebCrawler:
             await self.js_renderer.cleanup()
             self.is_running = False
             print(f"Crawl completed. Discovered: {self.stats['discovered']}, Crawled: {self.stats['crawled']}")
+
+            # Run duplication detection in background (does not block completed status)
+            if self.issue_detector and self.config.get('enable_duplication_check', True):
+                duplication_threshold = self.config.get('duplication_threshold', 0.85)
+                crawl_results_snapshot = list(self.crawl_results)
+                def _run_dedup():
+                    print("Running duplication detection...")
+                    self.issue_detector.detect_duplication_issues(crawl_results_snapshot, duplication_threshold)
+                    print(f"Duplication detection complete. Total issues: {len(self.issue_detector.get_issues())}")
+                threading.Thread(target=_run_dedup, daemon=True).start()
 
     def _update_all_linked_from(self):
         """Update linked_from field for all crawled URLs based on collected source_pages data"""
